@@ -24,10 +24,10 @@ def main():
 
     with open(RESPONSE_FIFO_PATH, "r") as response_fifo:
         while True:
-            line = response_fifo.readline()
-            if not line:
+            char = response_fifo.read(1)
+            if not char:
                 break
-            print(line.strip())
+            print(char, end="", flush=True)
 
 
 if __name__ == "__main__":

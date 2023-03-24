@@ -190,7 +190,7 @@ class ChatService:
                     stdout.write(content)
                     response_fifo.write(content)
                     stdout.flush()
-                    response_fifo.flush()  # Add this line
+                    response_fifo.flush()  # Make sure the fifo is flushed
                     buf += content
         buf = buf.strip()
         stdout.write("\n\n")
