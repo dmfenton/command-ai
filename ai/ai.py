@@ -8,8 +8,11 @@ from datetime import datetime
 from os import path
 from sys import stdout
 from typing import NamedTuple, Optional
-
+import threading
 import openai
+
+FIFO_PATH = "/tmp/chatbot_fifo"
+RESPONSE_FIFO_PATH = "/tmp/chatbot_response_fifo"
 
 
 class ChatCompletionParams(NamedTuple):
@@ -69,7 +72,9 @@ class ChatService:
 
     def start(self) -> None:
         """Start the chat service."""
+        print("Type 'ai <command>' to send commands to the chatbot.")
         print('Type "/help" to see available commands.\n')
+        print("Type 'exit' to stop the chatbot.")
 
         try:
             while True:
@@ -165,7 +170,7 @@ class ChatService:
         self.history.add_message(prompt)
         return messages
 
-    def stream_completion(self, line: str, params: ChatCompletionParams) -> None:
+    def stream_completion(self, line: str, params: ChatCompletionParams, response_fifo) -> None:
         """Stream completions to stdout as they become available."""
         messages = self.create_prompt_messages(line)
 
@@ -183,11 +188,15 @@ class ChatService:
                 # don't print initial empty lines
                 if buf != "" or not content.strip() == "":
                     stdout.write(content)
+                    response_fifo.write(content)
                     stdout.flush()
+                    response_fifo.flush()  # Add this line
                     buf += content
         buf = buf.strip()
         stdout.write("\n\n")
         self.history.add_message({"role": "assistant", "content": buf})
+        # Write an empty line to signal the end of the AI's response
+        response_fifo.write("\n")
 
 
 class ChatHistory:
@@ -247,7 +256,8 @@ class ChatHistory:
         with open(file_path, mode="w") as f:
             context = {"role": "system", "content": self.context}
             log = json.dumps(context, ensure_ascii=False) + "\n"
-            log += "\n".join([json.dumps(m, ensure_ascii=False) for m in self.messages])
+            log += "\n".join([json.dumps(m, ensure_ascii=False)
+                             for m in self.messages])
             f.write(log)
         return file_path
 
@@ -263,8 +273,10 @@ def read_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
 
     parser.add_argument("-m", "--model", default=default.model)
-    parser.add_argument("-M", "--max_tokens", type=int, default=default.max_tokens)
-    parser.add_argument("-t", "--temperature", type=float, default=default.temperature)
+    parser.add_argument("-M", "--max_tokens", type=int,
+                        default=default.max_tokens)
+    parser.add_argument("-t", "--temperature", type=float,
+                        default=default.temperature)
 
     return parser.parse_args()
 
@@ -295,8 +307,35 @@ def load_context() -> str:
         with open(context_file, mode="r") as f:
             context += f.read().strip()
     else:
-        context += f"The following is a conversation with an AI assistant named Ai (愛). The assistant is helpful, creative, clever, and very friendly." 
+        context += f"The following is a conversation with an AI assistant named Ai (愛). The assistant is helpful, creative, clever, and very friendly."
     return context
+
+
+def start_fifo_server(chat):
+    if not os.path.exists(FIFO_PATH):
+        try:
+            os.mkfifo(FIFO_PATH)
+        except OSError as oe:
+            if oe.errno != errno.EEXIST:
+                raise
+
+    if not os.path.exists(RESPONSE_FIFO_PATH):
+        try:
+            os.mkfifo(RESPONSE_FIFO_PATH)
+        except OSError as oe:
+            if oe.errno != errno.EEXIST:
+                raise
+
+    while True:
+        with open(FIFO_PATH, "r") as fifo:
+            with open(RESPONSE_FIFO_PATH, "w") as response_fifo:
+                full_message = fifo.read()
+                if full_message.strip() == "exit":
+                    os.remove(FIFO_PATH)
+                    os.remove(RESPONSE_FIFO_PATH)
+                    break
+                chat.stream_completion(
+                    full_message, chat.params, response_fifo)
 
 
 def main():
@@ -306,8 +345,22 @@ def main():
         exit()
 
     config = create_chat_config()
-    chat = ChatService(config=config)
-    chat.start()
+    chat_service = ChatService(config=config)
+
+    # Run the chatbot in the background
+    t = threading.Thread(target=start_fifo_server, args=(chat_service,))
+    t.daemon = True
+    t.start()
+    chat_service.start()
+
+    while True:
+        try:
+            cmd = input().strip()
+            if cmd == "exit":
+
+                break
+        except (KeyboardInterrupt, EOFError):
+            break
 
 
 if __name__ == "__main__":
