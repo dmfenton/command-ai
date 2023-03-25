@@ -3,7 +3,6 @@
 import argparse
 import json
 import os
-import readline
 from datetime import datetime
 from os import path
 from sys import stdout
@@ -178,7 +177,6 @@ class ChatService:
 
         stream = openai.ChatCompletion.create(**params._asdict())
 
-        stdout.write("\n")
         buf = ""
         for obj in stream:
             choice = obj.choices[0]
@@ -187,13 +185,10 @@ class ChatService:
                 content = delta["content"]
                 # don't print initial empty lines
                 if buf != "" or not content.strip() == "":
-                    stdout.write(content)
                     response_fifo.write(content)
-                    stdout.flush()
                     response_fifo.flush()  # Make sure the fifo is flushed
                     buf += content
         buf = buf.strip()
-        stdout.write("\n\n")
         self.history.add_message({"role": "assistant", "content": buf})
         # Write an empty line to signal the end of the AI's response
         response_fifo.write("\n")
@@ -307,7 +302,7 @@ def load_context() -> str:
         with open(context_file, mode="r") as f:
             context += f.read().strip()
     else:
-        context += f"The following is a conversation with an AI assistant named Ai (愛). The assistant is helpful, creative, clever, and very friendly."
+        context += f"The following is a conversation with an AI assistant that is running on the terminal of a MacOS computer."
     return context
 
 
