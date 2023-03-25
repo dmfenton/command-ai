@@ -12,3 +12,4 @@ dependencies = [
 
 [project.scripts]
 ai = "ai.ai:main"
+gpt4 = "ai.ai_client:main"
