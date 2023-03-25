@@ -1,26 +1,21 @@
-import os
 import sys
-import time
+import os
 
 FIFO_PATH = "/tmp/chatbot_fifo"
 RESPONSE_FIFO_PATH = "/tmp/chatbot_response_fifo"
 
 
 def main():
-    if not os.path.exists(FIFO_PATH):
-        print("Error: Chatbot server is not running.")
-        sys.exit(1)
-
     if not os.path.exists(RESPONSE_FIFO_PATH):
         os.mkfifo(RESPONSE_FIFO_PATH)
 
     if len(sys.argv) > 1:
-        message = ' '.join(sys.argv[1:])
+        command = " ".join(sys.argv[1:])
     else:
-        message = sys.stdin.read().strip()
+        command = input("Enter a command: ")
 
     with open(FIFO_PATH, "w") as fifo:
-        fifo.write(message + "\n")
+        fifo.write(command + "\n")
 
     with open(RESPONSE_FIFO_PATH, "r") as response_fifo:
         while True:
@@ -28,6 +23,9 @@ def main():
             if not char:
                 break
             print(char, end="", flush=True)
+
+    if command.lower() == "exit":
+        os.remove(RESPONSE_FIFO_PATH)
 
 
 if __name__ == "__main__":
